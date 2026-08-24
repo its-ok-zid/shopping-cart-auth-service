@@ -31,7 +31,11 @@ public class SecurityConfig {
 
         // 3. Define Route Protections
         http.authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/v1/auth/login", "/api/v1/auth/register", "/api/v1/auth/refresh").permitAll()
+                .requestMatchers(
+                        "/api/v1/auth/login",
+                        "/api/v1/auth/register",
+                        "/api/v1/auth/refresh",
+                        "/api/v1/auth/logout").permitAll()
                 .anyRequest().authenticated()
         );
 

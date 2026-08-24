@@ -1,5 +1,6 @@
 package com.zidtech.auth.repository;
 
+import com.zidtech.auth.config.JpaConfig;
 import com.zidtech.auth.domain.entity.AppUser;
 import com.zidtech.auth.domain.enums.UserRole;
 import org.junit.jupiter.api.BeforeEach;
@@ -7,12 +8,14 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.context.annotation.Import;
 
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 @DataJpaTest
+@Import(JpaConfig.class)
 class UserRepositoryTest {
 
     @Autowired
