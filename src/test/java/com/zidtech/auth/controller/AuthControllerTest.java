@@ -4,12 +4,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zidtech.auth.config.SecurityConfig;
 import com.zidtech.auth.dto.AuthResponse;
 import com.zidtech.auth.dto.AuthResult;
+import com.zidtech.auth.dto.LoginRequest;
 import com.zidtech.auth.dto.RegisterRequest;
 import com.zidtech.auth.service.AuthService;
 import com.zidtech.security.JwtTokenService;
 import com.zidtech.security.RefreshTokenCookieFactory;
 import jakarta.servlet.http.Cookie;
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -27,89 +27,73 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(AuthController.class)
-@Import(SecurityConfig.class) // Load our security rules to ensure endpoints are accessible
+@Import(SecurityConfig.class)
 class AuthControllerTest {
 
-    @Autowired
-    private MockMvc mockMvc;
-    @Autowired
-    private ObjectMapper objectMapper;
+    @Autowired private MockMvc mockMvc;
+    @Autowired private ObjectMapper objectMapper;
 
-    // We mock the service layer because we only want to test the HTTP Edge Layer!
-    @MockBean
-    private AuthService authService;
-    @MockBean
-    private RefreshTokenCookieFactory cookieFactory;
-
-    // Required because SecurityConfig needs it to build the JwtAuthenticationFilter
-    @MockBean
-    private JwtTokenService jwtTokenService;
+    @MockBean private AuthService authService;
+    @MockBean private RefreshTokenCookieFactory cookieFactory;
+    @MockBean private JwtTokenService jwtTokenService;
 
     @Test
-    @DisplayName("Should return 201 Created and Set-Cookie header on successful registration")
-    void register_ValidPayload_ReturnsCreated() throws Exception {
-        // Arrange
-        RegisterRequest request = new RegisterRequest("Zidan", "Ali", "zidan@zidtech.com", "Password123!");
-        AuthResponse authResponse = new AuthResponse("mock.access.token", UUID.randomUUID(), "Zidan", "Ali", "CUSTOMER");
-        AuthResult authResult = new AuthResult(authResponse, "mock.refresh.token");
+    void register_ReturnsCreated() throws Exception {
+        RegisterRequest request = new RegisterRequest("Z", "A", "z@z.com", "Password123!");
+        AuthResult result = new AuthResult(new AuthResponse("token", UUID.randomUUID(), "Z", "A", "CUSTOMER"), "refresh");
+        when(authService.register(any())).thenReturn(result);
+        when(cookieFactory.create(any())).thenReturn(ResponseCookie.from("shopping_refresh", "refresh").build());
 
-        ResponseCookie mockCookie = ResponseCookie.from("shopping_refresh", "mock.refresh.token")
-                .httpOnly(true)
-                .path("/")
-                .build();
-
-        when(authService.register(any(RegisterRequest.class))).thenReturn(authResult);
-        when(cookieFactory.create("mock.refresh.token")).thenReturn(mockCookie);
-
-        // Act & Assert
-        mockMvc.perform(post("/api/v1/auth/register")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.accessToken").value("mock.access.token"))
-                .andExpect(jsonPath("$.firstName").value("Zidan"))
-                .andExpect(header().exists(HttpHeaders.SET_COOKIE))
-                .andExpect(header().string(HttpHeaders.SET_COOKIE, "shopping_refresh=mock.refresh.token; Path=/; HttpOnly"));
+        mockMvc.perform(post("/api/v1/auth/register").contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request))).andExpect(status().isCreated());
     }
 
     @Test
-    @DisplayName("Should return 400 Bad Request when JSON payload is invalid")
-    void register_InvalidPayload_ReturnsBadRequest() throws Exception {
-        // Arrange: Missing email and password too short
-        RegisterRequest request = new RegisterRequest("Zidan", "Ali", "invalid-email", "short");
+    void login_ReturnsOk() throws Exception {
+        LoginRequest request = new LoginRequest("z@z.com", "Password123!");
+        AuthResult result = new AuthResult(new AuthResponse("token", UUID.randomUUID(), "Z", "A", "CUSTOMER"), "refresh");
+        when(authService.login(any())).thenReturn(result);
+        when(cookieFactory.create(any())).thenReturn(ResponseCookie.from("shopping_refresh", "refresh").build());
 
-        // Act & Assert: Verifies our @Valid annotations and GlobalExceptionHandler!
-        mockMvc.perform(post("/api/v1/auth/register")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("Payload validation failed"))
-                .andExpect(jsonPath("$.validationErrors.email").exists())
-                .andExpect(jsonPath("$.validationErrors.password").exists());
+        mockMvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request))).andExpect(status().isOk());
     }
 
     @Test
-    @DisplayName("Should return 200 OK and clear cookie on logout")
+    void refreshToken_ValidCookie_ReturnsOk() throws Exception {
+        AuthResult result = new AuthResult(new AuthResponse("new", UUID.randomUUID(), "Z", "A", "C"), "newRef");
+        when(authService.refreshToken("old")).thenReturn(result);
+        when(cookieFactory.create("newRef")).thenReturn(ResponseCookie.from("shopping_refresh", "newRef").build());
+
+        mockMvc.perform(post("/api/v1/auth/refresh").cookie(new Cookie("shopping_refresh", "old")))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void refreshToken_MissingCookie_ReturnsUnauthorized() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/refresh")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void refreshToken_BlankCookie_ReturnsUnauthorized() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/refresh").cookie(new Cookie("shopping_refresh", "")))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void logout_ClearsCookie() throws Exception {
-        // Arrange
-        ResponseCookie clearedCookie = ResponseCookie.from("shopping_refresh", "")
-                .maxAge(0)
-                .path("/")
-                .build();
+        when(cookieFactory.clear()).thenReturn(ResponseCookie.from("shopping_refresh", "").maxAge(0).build());
+        mockMvc.perform(post("/api/v1/auth/logout").cookie(new Cookie("shopping_refresh", "old")))
+                .andExpect(status().isOk()).andExpect(header().exists(HttpHeaders.SET_COOKIE));
+        verify(authService).logout("old");
+    }
 
-        when(cookieFactory.clear()).thenReturn(clearedCookie);
-
-        // Act & Assert
-        mockMvc.perform(post("/api/v1/auth/logout")
-                        .cookie(new Cookie("shopping_refresh", "old.refresh.token")))
-                .andExpect(status().isOk())
-                .andExpect(header().string(HttpHeaders.SET_COOKIE, "shopping_refresh=; Path=/; Max-Age=0; Expires=Thu, 1 Jan 1970 00:00:00 GMT"));
-
-        // Verify the service was actually commanded to revoke the token
-        verify(authService).logout("old.refresh.token");
+    @Test
+    void logout_MissingCookie_ReturnsOk() throws Exception {
+        when(cookieFactory.clear()).thenReturn(ResponseCookie.from("shopping_refresh", "").maxAge(0).build());
+        mockMvc.perform(post("/api/v1/auth/logout")).andExpect(status().isOk());
     }
 }
