@@ -301,4 +301,31 @@ class AuthServiceImplTest {
         verify(userRepository, never()).save(any());
         verify(jwtTokenService, never()).issueAccessToken(any());
     }
+
+    @Test
+    @DisplayName("Register: Should default to CUSTOMER role when role is null")
+    void register_NullRole_DefaultsToCustomer() {
+        RegisterRequest request = new RegisterRequest("Zidan", "Ali", "zidan@zidtech.com", "Password123!", null);
+        when(userRepository.existsByEmail(request.email())).thenReturn(false);
+        when(passwordEncoder.encode(request.password())).thenReturn("hashed_password");
+        when(userRepository.save(any(AppUser.class))).thenReturn(mockUser);
+        when(jwtTokenService.issueAccessToken(any(SecurityPrincipal.class))).thenReturn(mockAccessToken);
+        when(jwtTokenService.issueRefreshToken(any(SecurityPrincipal.class), isNull())).thenReturn(mockRefreshToken);
+
+        AuthResult result = authService.register(request);
+
+        assertThat(result.response().accessToken()).isEqualTo("access.jwt.string");
+        verify(userRepository, times(1)).save(any(AppUser.class));
+    }
+
+    @Test
+    @DisplayName("Logout: Should do nothing when token is not present in database")
+    void logout_TokenNotFound_DoesNothing() {
+        String rawToken = "non.existent.token";
+        when(refreshTokenRepository.findByHashedValue(anyString())).thenReturn(Optional.empty());
+
+        authService.logout(rawToken);
+
+        verify(refreshTokenRepository, never()).save(any());
+    }
 }

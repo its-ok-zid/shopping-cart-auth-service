@@ -11,63 +11,100 @@ permissions:
   packages: write
 
 jobs:
+  # ==========================================
+  # STAGE 1: TEST
+  # ==========================================
   test:
     name: 1. Test & Quality Gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
         with:
           java-version: '21'
           distribution: 'temurin'
           cache: maven
-      - run: |
+
+      - name: Configure GitHub Packages Authentication
+        run: |
           mkdir -p ~/.m2
           echo "<settings><servers><server><id>github</id><username>${{ github.actor }}</username><password>${{ secrets.GITHUB_TOKEN }}</password></server></servers></settings>" > ~/.m2/settings.xml
-      - run: ./mvnw clean test jacoco:report jacoco:check
 
+      - name: Make Maven Wrapper Executable
+        run: chmod +x mvnw
+
+      - name: Run Test Suite & JaCoCo Coverage Check
+        run: ./mvnw clean test jacoco:report jacoco:check
+
+  # ==========================================
+  # STAGE 2: BUILD
+  # ==========================================
   build:
     name: 2. Build Artifact
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
         with:
           java-version: '21'
           distribution: 'temurin'
           cache: maven
-      - run: |
+
+      - name: Configure GitHub Packages Authentication
+        run: |
           mkdir -p ~/.m2
           echo "<settings><servers><server><id>github</id><username>${{ github.actor }}</username><password>${{ secrets.GITHUB_TOKEN }}</password></server></servers></settings>" > ~/.m2/settings.xml
-      - run: ./mvnw package -DskipTests
-      - uses: actions/upload-artifact@v4
+
+      - name: Make Maven Wrapper Executable
+        run: chmod +x mvnw
+
+      - name: Package Executable JAR
+        run: ./mvnw package -DskipTests
+
+      - name: Upload JAR Artifact
+        uses: actions/upload-artifact@v4
         with:
           name: auth-service-jar
           path: target/auth-service-*.jar
           retention-days: 1
 
+  # ==========================================
+  # STAGE 3: PACKAGE
+  # ==========================================
   package:
-    name: 3. Package & Publish to Registry (GHCR)
+    name: 3. Package & Publish Image (GHCR)
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Download JAR Artifact
+        uses: actions/download-artifact@v4
         with:
           name: auth-service-jar
           path: target/
-      - uses: docker/login-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - id: repo_name
+
+      - name: Extract Image Repository Name & Dynamic Tag
+        id: meta
         run: |
           REPO_LOWER=$(echo "${{ github.repository_owner }}/auth-service" | tr '[:upper:]' '[:lower:]')
           echo "image_repo=ghcr.io/${REPO_LOWER}" >> $GITHUB_OUTPUT
-      - id: versioning
-        run: |
+          
           BRANCH_NAME=${GITHUB_REF#refs/heads/}
           if [[ "$BRANCH_NAME" == "main" || "$BRANCH_NAME" == "master" ]]; then
             echo "tag=latest" >> $GITHUB_OUTPUT
@@ -75,10 +112,29 @@ jobs:
             SAFE_BRANCH=$(echo $BRANCH_NAME | tr '/' '-')
             echo "tag=${SAFE_BRANCH}-SNAPSHOT" >> $GITHUB_OUTPUT
           fi
-      - uses: docker/build-push-action@v5
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
         with:
           context: .
           push: true
           tags: |
-            ${{ steps.repo_name.outputs.image_repo }}:${{ github.sha }}
-            ${{ steps.repo_name.outputs.image_repo }}:${{ steps.versioning.outputs.tag }}
+            ${{ steps.meta.outputs.image_repo }}:${{ github.sha }}
+            ${{ steps.meta.outputs.image_repo }}:${{ steps.meta.outputs.tag }}
+
+  # ==========================================
+  # STAGE 4: DEPLOY
+  # ==========================================
+  deploy:
+    name: 4. Deploy (Simulation)
+    needs: package
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop'
+    steps:
+      - name: Execute Server Deployment Pull
+        run: |
+          echo "=========================================================="
+          echo "Stage 4: Pulling latest container and restarting services"
+          echo "Target Registry: ghcr.io/${{ github.repository_owner }}/auth-service"
+          echo "Command: docker compose pull && docker compose up -d"
+          echo "=========================================================="
