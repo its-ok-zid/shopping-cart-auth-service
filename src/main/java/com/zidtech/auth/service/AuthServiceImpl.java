@@ -45,14 +45,26 @@ public class AuthServiceImpl implements AuthService {
             throw new DuplicateResourceException("Email is already in use");
         }
 
-        AppUser newUser = AppUser.builder().firstName(request.firstName()).lastName(request.lastName()).email(request.email())
-                // Never store plain text passwords!
-                .passwordHash(passwordEncoder.encode(request.password())).role(UserRole.CUSTOMER) // Default role for new signups
+        // SECURITY RULE: Public users can register as CUSTOMER or SELLER only.
+        // Preventing unauthorized escalation to ADMIN role.
+        UserRole assignedRole = UserRole.CUSTOMER;
+        if (request.role() != null) {
+            if (request.role() == UserRole.ADMIN) {
+                throw new InvalidCredentialsException("Unauthorized role assignment");
+            }
+            assignedRole = request.role();
+        }
+
+        AppUser newUser = AppUser.builder()
+                .firstName(request.firstName())
+                .lastName(request.lastName())
+                .email(request.email())
+                .passwordHash(passwordEncoder.encode(request.password()))
+                .role(assignedRole)
                 .build();
 
         AppUser savedUser = userRepository.save(newUser);
-        log.info("Successfully registered user ID: {}", savedUser.getPublicId());
-
+        log.info("Successfully registered user ID: {} with role: {}", savedUser.getPublicId(), assignedRole);
         return generateTokens(savedUser);
     }
 
