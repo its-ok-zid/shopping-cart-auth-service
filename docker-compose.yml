@@ -1,0 +1,57 @@
+version: '3.8'
+
+networks:
+  shopping-cart-net:
+    driver: bridge
+
+volumes:
+  auth-db-data:
+
+services:
+  # ==========================================
+  # 1. PostgreSQL Database for Auth Service
+  # ==========================================
+  auth-db:
+    image: postgres:15-alpine
+    container_name: auth-db
+    restart: unless-stopped
+    networks:
+      - shopping-cart-net
+    environment:
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "5432:5432"
+    volumes:
+      - auth-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================
+  # 2. Auth Microservice
+  # ==========================================
+  auth-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: auth-service
+    restart: unless-stopped
+    networks:
+      - shopping-cart-net
+    ports:
+      - "8082:8082"
+    environment:
+      - SPRING_APPLICATION_NAME=auth-service
+      - SPRING_DATASOURCE_URL=${DB_URL}
+      - DATABASE_USERNAME=${DB_USERNAME}
+      - DATABASE_PASSWORD=${DB_PASSWORD}
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+      - JWT_SECRET=${JWT_SECRET}
+      - APP_SECURITY_SECURE_COOKIES=false
+    depends_on:
+      auth-db:
+        condition: service_healthy
