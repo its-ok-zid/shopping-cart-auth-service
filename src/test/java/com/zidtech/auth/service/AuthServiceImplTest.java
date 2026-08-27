@@ -10,7 +10,6 @@ import com.zidtech.auth.exception.DuplicateResourceException;
 import com.zidtech.auth.exception.InvalidCredentialsException;
 import com.zidtech.auth.repository.RefreshTokenRepository;
 import com.zidtech.auth.repository.UserRepository;
-import com.zidtech.auth.service.AuthServiceImpl;
 import com.zidtech.security.IssuedToken;
 import com.zidtech.security.JwtTokenService;
 import com.zidtech.security.ParsedToken;
@@ -80,7 +79,7 @@ class AuthServiceImplTest {
     @Test
     @DisplayName("Register: Should successfully create user and return token pair")
     void register_Success() {
-        RegisterRequest request = new RegisterRequest("Zidan", "Ali", "zidan@zidtech.com", "Password123!");
+        RegisterRequest request = new RegisterRequest("Zidan", "Ali", "zidan@zidtech.com", "Password123!", UserRole.SELLER);
 
         when(userRepository.existsByEmail(request.email())).thenReturn(false);
         when(passwordEncoder.encode(request.password())).thenReturn("hashed_password");
@@ -98,7 +97,7 @@ class AuthServiceImplTest {
     @Test
     @DisplayName("Register: Should block registration if email already exists")
     void register_DuplicateEmail_ThrowsException() {
-        RegisterRequest request = new RegisterRequest("Zidan", "Ali", "zidan@zidtech.com", "Password123!");
+        RegisterRequest request = new RegisterRequest("Zidan", "Ali", "zidan@zidtech.com", "Password123!", UserRole.CUSTOMER);
         when(userRepository.existsByEmail(request.email())).thenReturn(true);
 
         assertThatThrownBy(() -> authService.register(request))
@@ -268,5 +267,38 @@ class AuthServiceImplTest {
 
         assertThat(tokenEntity.isRevoked()).isTrue();
         verify(refreshTokenRepository, times(1)).save(tokenEntity);
+    }
+
+    @Test
+    @DisplayName("Register: Should successfully create user with SELLER role")
+    void register_SellerRole_Success() {
+        RegisterRequest request = new RegisterRequest("Zidan", "Ali", "zidan@zidtech.com", "Password123!", UserRole.SELLER);
+
+        when(userRepository.existsByEmail(request.email())).thenReturn(false);
+        when(passwordEncoder.encode(request.password())).thenReturn("hashed_password");
+        when(userRepository.save(any(AppUser.class))).thenReturn(mockUser);
+        when(jwtTokenService.issueAccessToken(any(SecurityPrincipal.class))).thenReturn(mockAccessToken);
+        when(jwtTokenService.issueRefreshToken(any(SecurityPrincipal.class), isNull())).thenReturn(mockRefreshToken);
+
+        AuthResult result = authService.register(request);
+
+        assertThat(result.response().accessToken()).isEqualTo("access.jwt.string");
+        verify(userRepository, times(1)).save(any(AppUser.class));
+    }
+
+    @Test
+    @DisplayName("Register: Should block public registration attempting to use ADMIN role")
+    void register_AdminRole_ThrowsException() {
+        RegisterRequest request = new RegisterRequest("Zidan", "Ali", "zidan@zidtech.com", "Password123!", UserRole.ADMIN);
+
+        when(userRepository.existsByEmail(request.email())).thenReturn(false);
+
+        assertThatThrownBy(() -> authService.register(request))
+                .isInstanceOf(InvalidCredentialsException.class)
+                .hasMessageContaining("Unauthorized role assignment");
+
+        // Verify we never saved the user or generated tokens for an unauthorized admin signup
+        verify(userRepository, never()).save(any());
+        verify(jwtTokenService, never()).issueAccessToken(any());
     }
 }

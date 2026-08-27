@@ -22,6 +22,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.UUID;
 
+import static com.zidtech.auth.domain.enums.UserRole.CUSTOMER;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -42,7 +43,7 @@ class AuthControllerTest {
 
     @Test
     void register_ReturnsCreated() throws Exception {
-        RegisterRequest request = new RegisterRequest("Z", "A", "z@z.com", "Password123!");
+        RegisterRequest request = new RegisterRequest("Z", "A", "z@z.com", "Password123!", CUSTOMER);
         AuthResult result = new AuthResult(new AuthResponse("token", UUID.randomUUID(), "Z", "A", "CUSTOMER"), "refresh");
         when(authService.register(any())).thenReturn(result);
         when(cookieFactory.create(any())).thenReturn(ResponseCookie.from("shopping_refresh", "refresh").build());
