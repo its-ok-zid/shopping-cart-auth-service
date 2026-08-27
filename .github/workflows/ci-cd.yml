@@ -33,11 +33,8 @@ jobs:
           mkdir -p ~/.m2
           echo "<settings><servers><server><id>github</id><username>${{ github.actor }}</username><password>${{ secrets.GITHUB_TOKEN }}</password></server></servers></settings>" > ~/.m2/settings.xml
 
-      - name: Make Maven Wrapper Executable
-        run: chmod +x mvnw
-
       - name: Run Test Suite & JaCoCo Coverage Check
-        run: ./mvnw clean test jacoco:report jacoco:check
+        run: mvn clean test jacoco:report jacoco:check
 
   # ==========================================
   # STAGE 2: BUILD
@@ -62,11 +59,8 @@ jobs:
           mkdir -p ~/.m2
           echo "<settings><servers><server><id>github</id><username>${{ github.actor }}</username><password>${{ secrets.GITHUB_TOKEN }}</password></server></servers></settings>" > ~/.m2/settings.xml
 
-      - name: Make Maven Wrapper Executable
-        run: chmod +x mvnw
-
       - name: Package Executable JAR
-        run: ./mvnw package -DskipTests
+        run: mvn package -DskipTests
 
       - name: Upload JAR Artifact
         uses: actions/upload-artifact@v4
