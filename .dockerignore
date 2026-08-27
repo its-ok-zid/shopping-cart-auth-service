@@ -1,0 +1,10 @@
+.git
+.gitignore
+.idea
+.mvn
+*.iml
+HELP.md
+target/generated-sources
+target/test-classes
+target/surefire-reports
+target/jacoco.exec
